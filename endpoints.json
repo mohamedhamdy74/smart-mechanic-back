@@ -1,0 +1,435 @@
+{
+  "auth_register": {
+    "method": "POST",
+    "url": "/auth/register",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "role": "user",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "password": "password123",
+      "phone": "1234567890",
+      "location": "New York"
+    },
+    "expected_response": {
+      "message": "User registered"
+    }
+  },
+  "auth_login": {
+    "method": "POST",
+    "url": "/auth/login",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "email": "john@example.com",
+      "password": "password123"
+    },
+    "expected_response": {
+      "token": "jwt_token_here"
+    }
+  },
+  "users_get_all": {
+    "method": "GET",
+    "url": "/users?page=1&limit=10",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here"
+    },
+    "expected_response": {
+      "users": [
+        {
+          "role": "user",
+          "name": "John Doe",
+          "email": "john@example.com",
+          "phone": "1234567890",
+          "location": "New York",
+          "_id": "user_id",
+          "createdAt": "2023-01-01T00:00:00.000Z",
+          "updatedAt": "2023-01-01T00:00:00.000Z"
+        }
+      ],
+      "total": 1,
+      "page": 1,
+      "pages": 1
+    }
+  },
+  "users_get_by_id": {
+    "method": "GET",
+    "url": "/users/user_id",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here"
+    },
+    "expected_response": {
+      "role": "user",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "phone": "1234567890",
+      "location": "New York",
+      "_id": "user_id",
+      "createdAt": "2023-01-01T00:00:00.000Z",
+      "updatedAt": "2023-01-01T00:00:00.000Z"
+    }
+  },
+  "users_update": {
+    "method": "PUT",
+    "url": "/users/user_id",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "name": "Jane Doe",
+      "phone": "0987654321"
+    },
+    "expected_response": {
+      "role": "user",
+      "name": "Jane Doe",
+      "email": "john@example.com",
+      "phone": "0987654321",
+      "location": "New York",
+      "_id": "user_id",
+      "createdAt": "2023-01-01T00:00:00.000Z",
+      "updatedAt": "2023-01-01T00:00:00.000Z"
+    }
+  },
+  "users_delete": {
+    "method": "DELETE",
+    "url": "/users/user_id",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here"
+    },
+    "expected_response": {
+      "message": "User deleted"
+    }
+  },
+  "products_get_all": {
+    "method": "GET",
+    "url": "/products?page=1&limit=10",
+    "expected_response": {
+      "products": [
+        {
+          "userId": "workshop_owner_id",
+          "name": "Brake Pad",
+          "brand": "BrandX",
+          "price": 100,
+          "stock": 50,
+          "inStock": true,
+          "images": ["uploads/images-123456789.jpg"],
+          "_id": "product_id",
+          "createdAt": "2023-01-01T00:00:00.000Z",
+          "updatedAt": "2023-01-01T00:00:00.000Z"
+        }
+      ],
+      "total": 1,
+      "page": 1,
+      "pages": 1
+    }
+  },
+  "products_get_by_id": {
+    "method": "GET",
+    "url": "/products/product_id",
+    "expected_response": {
+      "userId": "workshop_owner_id",
+      "name": "Brake Pad",
+      "brand": "BrandX",
+      "price": 100,
+      "stock": 50,
+      "inStock": true,
+      "images": ["uploads/images-123456789.jpg"],
+      "_id": "product_id",
+      "createdAt": "2023-01-01T00:00:00.000Z",
+      "updatedAt": "2023-01-01T00:00:00.000Z"
+    }
+  },
+  "products_create": {
+    "method": "POST",
+    "url": "/products",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here"
+    },
+    "body": "Form-data: name=Oil Filter&brand=BrandY&price=50&stock=20&inStock=true&images=(upload files)",
+    "expected_response": {
+      "userId": "workshop_owner_id",
+      "name": "Oil Filter",
+      "brand": "BrandY",
+      "price": 50,
+      "stock": 20,
+      "inStock": true,
+      "images": ["uploads/images-123456789.jpg"],
+      "_id": "new_product_id",
+      "createdAt": "2023-01-01T00:00:00.000Z",
+      "updatedAt": "2023-01-01T00:00:00.000Z"
+    }
+  },
+  "products_update": {
+    "method": "PUT",
+    "url": "/products/product_id",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here"
+    },
+    "body": "Form-data: price=120&stock=40&images=(upload files)",
+    "expected_response": {
+      "userId": "workshop_owner_id",
+      "name": "Brake Pad",
+      "brand": "BrandX",
+      "price": 120,
+      "stock": 40,
+      "inStock": true,
+      "images": ["uploads/images-123456789.jpg", "uploads/images-987654321.jpg"],
+      "_id": "product_id",
+      "createdAt": "2023-01-01T00:00:00.000Z",
+      "updatedAt": "2023-01-01T00:00:00.000Z"
+    }
+  },
+  "products_delete": {
+    "method": "DELETE",
+    "url": "/products/product_id",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here"
+    },
+    "expected_response": {
+      "message": "Product deleted"
+    }
+  },
+  "orders_get_all": {
+    "method": "GET",
+    "url": "/orders?page=1&limit=10",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here"
+    },
+    "expected_response": {
+      "orders": [
+        {
+          "userId": "user_id",
+          "products": [
+            {
+              "productId": "product_id",
+              "quantity": 2,
+              "price": 100
+            }
+          ],
+          "totalAmount": 200,
+          "status": "pending",
+          "_id": "order_id",
+          "createdAt": "2023-01-01T00:00:00.000Z",
+          "updatedAt": "2023-01-01T00:00:00.000Z"
+        }
+      ],
+      "total": 1,
+      "page": 1,
+      "pages": 1
+    }
+  },
+  "orders_get_by_id": {
+    "method": "GET",
+    "url": "/orders/order_id",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here"
+    },
+    "expected_response": {
+      "userId": "user_id",
+      "products": [
+        {
+          "productId": "product_id",
+          "quantity": 2,
+          "price": 100
+        }
+      ],
+      "totalAmount": 200,
+      "status": "pending",
+      "_id": "order_id",
+      "createdAt": "2023-01-01T00:00:00.000Z",
+      "updatedAt": "2023-01-01T00:00:00.000Z"
+    }
+  },
+  "orders_create": {
+    "method": "POST",
+    "url": "/orders",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "products": [
+        {
+          "productId": "product_id",
+          "quantity": 1,
+          "price": 100
+        }
+      ],
+      "totalAmount": 100
+    },
+    "expected_response": {
+      "userId": "user_id",
+      "products": [
+        {
+          "productId": "product_id",
+          "quantity": 1,
+          "price": 100
+        }
+      ],
+      "totalAmount": 100,
+      "status": "pending",
+      "_id": "new_order_id",
+      "createdAt": "2023-01-01T00:00:00.000Z",
+      "updatedAt": "2023-01-01T00:00:00.000Z"
+    }
+  },
+  "orders_update": {
+    "method": "PUT",
+    "url": "/orders/order_id",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here",
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "status": "confirmed"
+    },
+    "expected_response": {
+      "userId": "user_id",
+      "products": [
+        {
+          "productId": "product_id",
+          "quantity": 2,
+          "price": 100
+        }
+      ],
+      "totalAmount": 200,
+      "status": "confirmed",
+      "_id": "order_id",
+      "createdAt": "2023-01-01T00:00:00.000Z",
+      "updatedAt": "2023-01-01T00:00:00.000Z"
+    }
+  },
+  "orders_delete": {
+    "method": "DELETE",
+    "url": "/orders/order_id",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here"
+    },
+    "expected_response": {
+      "message": "Order deleted"
+    }
+  },
+  "cars_get_all": {
+    "method": "GET",
+    "url": "/cars?page=1&limit=10",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here"
+    },
+    "expected_response": {
+      "cars": [
+        {
+          "userId": "user_id",
+          "make": "Toyota",
+          "model": "Camry",
+          "year": 2020,
+          "vin": "1HGBH41JXMN109186",
+          "licensePlate": "ABC123",
+          "color": "Blue",
+          "mileage": 50000,
+          "fuelType": "Gasoline",
+          "transmission": "Automatic",
+          "engineCapacity": "2.5L",
+          "ownershipStatus": "Owned",
+          "images": ["uploads/images-123456789.jpg"],
+          "_id": "car_id",
+          "createdAt": "2023-01-01T00:00:00.000Z",
+          "updatedAt": "2023-01-01T00:00:00.000Z"
+        }
+      ],
+      "total": 1,
+      "page": 1,
+      "pages": 1
+    }
+  },
+  "cars_get_by_id": {
+    "method": "GET",
+    "url": "/cars/car_id",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here"
+    },
+    "expected_response": {
+      "userId": "user_id",
+      "make": "Toyota",
+      "model": "Camry",
+      "year": 2020,
+      "vin": "1HGBH41JXMN109186",
+      "licensePlate": "ABC123",
+      "color": "Blue",
+      "mileage": 50000,
+      "fuelType": "Gasoline",
+      "transmission": "Automatic",
+      "engineCapacity": "2.5L",
+      "ownershipStatus": "Owned",
+      "images": ["uploads/images-123456789.jpg"],
+      "_id": "car_id",
+      "createdAt": "2023-01-01T00:00:00.000Z",
+      "updatedAt": "2023-01-01T00:00:00.000Z"
+    }
+  },
+  "cars_create": {
+    "method": "POST",
+    "url": "/cars",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here"
+    },
+    "body": "Form-data: make=Honda&model=Civic&year=2019&vin=2HGFB2F59FH123456&licensePlate=XYZ789&color=Red&mileage=30000&fuelType=Gasoline&transmission=Manual&engineCapacity=1.8L&ownershipStatus=Owned&images=(upload files)",
+    "expected_response": {
+      "userId": "user_id",
+      "make": "Honda",
+      "model": "Civic",
+      "year": 2019,
+      "vin": "2HGFB2F59FH123456",
+      "licensePlate": "XYZ789",
+      "color": "Red",
+      "mileage": 30000,
+      "fuelType": "Gasoline",
+      "transmission": "Manual",
+      "engineCapacity": "1.8L",
+      "ownershipStatus": "Owned",
+      "images": ["uploads/images-123456789.jpg"],
+      "_id": "new_car_id",
+      "createdAt": "2023-01-01T00:00:00.000Z",
+      "updatedAt": "2023-01-01T00:00:00.000Z"
+    }
+  },
+  "cars_update": {
+    "method": "PUT",
+    "url": "/cars/car_id",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here"
+    },
+    "body": "Form-data: mileage=55000&color=Black&images=(upload files)",
+    "expected_response": {
+      "userId": "user_id",
+      "make": "Toyota",
+      "model": "Camry",
+      "year": 2020,
+      "vin": "1HGBH41JXMN109186",
+      "licensePlate": "ABC123",
+      "color": "Black",
+      "mileage": 55000,
+      "fuelType": "Gasoline",
+      "transmission": "Automatic",
+      "engineCapacity": "2.5L",
+      "ownershipStatus": "Owned",
+      "images": ["uploads/images-123456789.jpg", "uploads/images-987654321.jpg"],
+      "_id": "car_id",
+      "createdAt": "2023-01-01T00:00:00.000Z",
+      "updatedAt": "2023-01-01T00:00:00.000Z"
+    }
+  },
+  "cars_delete": {
+    "method": "DELETE",
+    "url": "/cars/car_id",
+    "headers": {
+      "Authorization": "Bearer jwt_token_here"
+    },
+    "expected_response": {
+      "message": "Car deleted"
+    }
+  }
+}
