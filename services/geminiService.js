@@ -17,6 +17,8 @@ async function generateMaintenancePlan(carData, maintenanceLogs) {
 NEVER mention workshops or mechanics.
 Return valid JSON ONLY.
 
+IMPORTANT: All text content (task names, warnings, recommendations) MUST be in ARABIC language.
+
 Input:
 Car Data: ${JSON.stringify(carData, null, 2)}
 Maintenance Logs: ${JSON.stringify(maintenanceLogs, null, 2)}
@@ -25,22 +27,23 @@ Output MUST follow this exact JSON structure (no markdown, no code blocks, just 
 
 {
   "upcoming": [
-    { "task": "...", "dueAtKM": 0, "estimatedDays": 0, "priority": "High|Medium|Low" }
+    { "task": "اسم المهمة بالعربية", "dueAtKM": 0, "estimatedDays": 0, "priority": "High|Medium|Low" }
   ],
-  "warnings": ["..."],
-  "recommended": ["..."],
+  "warnings": ["تحذيرات بالعربية"],
+  "recommended": ["توصيات بالعربية"],
   "carHealthScore": 0
 }
 
 Rules:
 1. Return ONLY valid JSON, no markdown formatting
-2. carHealthScore must be 0-100
-3. priority must be exactly "High", "Medium", or "Low"
-4. dueAtKM should be based on current mileage: ${carData.mileage || 0} km
-5. estimatedDays should be realistic based on average driving patterns
-6. Include at least 3-5 upcoming maintenance tasks
-7. Add warnings for overdue or critical maintenance
-8. Recommend preventive maintenance based on car age and mileage`;
+2. ALL text content (task, warnings, recommended) MUST be in ARABIC language
+3. carHealthScore must be 0-100
+4. priority must be exactly "High", "Medium", or "Low" (keep in English)
+5. dueAtKM should be based on current mileage: ${carData.mileage || 0} km
+6. estimatedDays should be realistic based on average driving patterns
+7. Include at least 3-5 upcoming maintenance tasks in ARABIC
+8. Add warnings for overdue or critical maintenance in ARABIC
+9. Recommend preventive maintenance based on car age and mileage in ARABIC`;
 
     let attempts = 0;
     const maxAttempts = 3;

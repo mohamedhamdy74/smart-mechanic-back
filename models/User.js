@@ -45,6 +45,8 @@ const userSchema = new mongoose.Schema(
     longitude: { type: Number },
     // Embedding for semantic search (array of floats)
     embedding: { type: [Number] },
+    // Mechanic profile embedding for RAG (768 dimensions from Gemini)
+    mechanicProfileEmbedding: { type: [Number] },
     // Profile update approval system
     pendingUpdates: {
       name: String,
@@ -79,10 +81,41 @@ userSchema.index({ location: "2dsphere" }); // geospatial queries
 userSchema.index({ name: 1 });
 userSchema.index({ phone: 1 });
 
-// Password hashing
+// Password hashing and embedding generation
 userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
-  this.password = await bcrypt.hash(this.password, 10);
+  // Hash password if modified
+  if (this.isModified("password")) {
+    this.password = await bcrypt.hash(this.password, 10);
+  }
+
+  // Auto-generate mechanic profile embedding when profile changes
+  if (this.role === 'mechanic' &&
+    (this.isModified('skills') ||
+      this.isModified('specialty') ||
+      this.isModified('bio') ||
+      this.isModified('name'))) {
+
+    try {
+      const { getEmbedding } = require('../utils/embedding-utils');
+
+      // Create profile text from mechanic data
+      const profileText = [
+        this.name,
+        this.specialty,
+        this.skills?.join(' '),
+        this.bio
+      ].filter(Boolean).join(' ');
+
+      if (profileText.trim()) {
+        this.mechanicProfileEmbedding = await getEmbedding(profileText);
+        console.log(`🔄 Updated embedding for mechanic: ${this.name}`);
+      }
+    } catch (error) {
+      console.error(`❌ Failed to generate embedding for ${this.name}:`, error.message);
+      // Don't block save if embedding fails
+    }
+  }
+
   next();
 });
 

@@ -2,6 +2,7 @@
 const { validationResult } = require("express-validator");
 const { GoogleGenAI } = require("@google/genai");
 const User = require("../models/User");
+const { vectorSearchMechanics } = require("../utils/vector-search");
 
 // Initialize Gemini with API key from environment
 const ai = new GoogleGenAI({
@@ -82,7 +83,32 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 }
 
 // RAG: Find best matching mechanic based on diagnosis
-async function findRecommendedMechanics(diagnosis, userLocation = null) {
+async function findRecommendedMechanics(diagnosis, userLocation = null, category = null) {
+  try {
+    // Check feature flag (default to true)
+    const useVectorSearch = process.env.USE_VECTOR_SEARCH !== 'false';
+
+    if (useVectorSearch) {
+      console.log('🔍 Using vector search for mechanic recommendation');
+      try {
+        // Try vector search first, passing the category for boosting
+        return await vectorSearchMechanics(diagnosis, userLocation, category);
+      } catch (error) {
+        console.error('❌ Vector search failed, falling back to keywords:', error.message);
+        // Fallback to keyword search on error
+      }
+    }
+
+    console.log('🔍 Using keyword search for mechanic recommendation');
+    return await keywordSearchMechanics(diagnosis, userLocation);
+  } catch (error) {
+    console.error('Error finding mechanics:', error);
+    return [];
+  }
+}
+
+// Legacy keyword-based search
+async function keywordSearchMechanics(diagnosis, userLocation = null) {
   try {
     const relevantSpecialties = extractProblemCategory(diagnosis);
 
@@ -156,37 +182,9 @@ async function findRecommendedMechanics(diagnosis, userLocation = null) {
     // Return only the best mechanic
     return mechanics.slice(0, 1);
   } catch (error) {
-    console.error('Error finding mechanics:', error);
+    console.error('Error in keyword search:', error);
     return [];
   }
-}
-
-// Format mechanic recommendation in Arabic
-function formatMechanicRecommendations(mechanics) {
-  if (!mechanics || mechanics.length === 0) {
-    return '\n\n---\n\n**لم يتم العثور على ميكانيكيين متاحين حالياً.**';
-  }
-
-  const mechanic = mechanics[0];
-  const isSpecialist = mechanic.isSpecialist;
-  const specialtyBadge = isSpecialist ? '⭐ متخصص' : '';
-
-  let recommendations = '\n\n---\n\n## 🔧 الميكانيكي المقترح:\n\n';
-  recommendations += `### ${mechanic.name} ${specialtyBadge}\n`;
-  recommendations += `- **التخصص:** ${mechanic.specialty || mechanic.skills?.join(', ') || 'صيانة عامة'}\n`;
-  recommendations += `- **التقييم:** ${mechanic.rating ? `⭐ ${mechanic.rating.toFixed(1)}/5` : 'جديد'}\n`;
-  recommendations += `- **الخبرة:** ${mechanic.experienceYears || 0} سنوات\n`;
-  recommendations += `- **الحجوزات المكتملة:** ${mechanic.completedBookings || 0}\n`;
-
-  if (mechanic.distance !== undefined && mechanic.distance < 999) {
-    recommendations += `- **المسافة:** ${mechanic.distance.toFixed(1)} كم\n`;
-  }
-
-  recommendations += `- **الموقع:** ${mechanic.location || 'غير محدد'}\n`;
-  recommendations += `- **الهاتف:** ${mechanic.phone || 'غير متاح'}\n`;
-  recommendations += `\n**💡 نصيحة:** هذا هو أنسب ميكانيكي لمشكلتك!`;
-
-  return recommendations;
 }
 
 // Gemini API calls
@@ -215,14 +213,21 @@ Respond ONLY in Arabic (except for the Category tag). Keep the response professi
   let fullResponse = response.text;
 
   // RAG: Add mechanic recommendation using the full response (which includes the Category tag)
-  const mechanics = await findRecommendedMechanics(fullResponse, userLocation);
-  const recommendations = formatMechanicRecommendations(mechanics);
+  // Extract category first to pass it for boosting
+  const categoryMatch = fullResponse.match(/Category=([\w\u0600-\u06FF]+)/i);
+  const category = categoryMatch ? categoryMatch[1].trim() : null;
+
+  const mechanics = await findRecommendedMechanics(fullResponse, userLocation, category);
 
   // Clean the response for display (remove the Category tag)
   const displayResponse = fullResponse.replace(/Category=[\w\u0600-\u06FF]+/i, '').trim();
 
-  console.log('Gemini text result received with', mechanics.length, 'mechanic recommendation');
-  return displayResponse + recommendations;
+  console.log(`Gemini text result: Category=${category}, Found ${mechanics.length} mechanics`);
+
+  return {
+    diagnosis: displayResponse,
+    mechanic: mechanics[0] || null
+  };
 }
 
 async function callGeminiImage(imageBuffer, userLocation = null) {
@@ -266,14 +271,21 @@ Respond ONLY in Arabic (except for the Category tag). Provide a detailed profess
   let fullResponse = response.text;
 
   // RAG: Add mechanic recommendation
-  const mechanics = await findRecommendedMechanics(fullResponse, userLocation);
-  const recommendations = formatMechanicRecommendations(mechanics);
+  // Extract category first to pass it for boosting
+  const categoryMatch = fullResponse.match(/Category=([\w\u0600-\u06FF]+)/i);
+  const category = categoryMatch ? categoryMatch[1].trim() : null;
+
+  const mechanics = await findRecommendedMechanics(fullResponse, userLocation, category);
 
   // Clean the response
   const displayResponse = fullResponse.replace(/Category=[\w\u0600-\u06FF]+/i, '').trim();
 
-  console.log('Gemini image result received with', mechanics.length, 'mechanic recommendation');
-  return displayResponse + recommendations;
+  console.log(`Gemini image result: Category=${category}, Found ${mechanics.length} mechanics`);
+
+  return {
+    diagnosis: displayResponse,
+    mechanic: mechanics[0] || null
+  };
 }
 
 async function callGeminiAudio(audioBuffer, userLocation = null) {
@@ -318,24 +330,35 @@ Respond ONLY in Arabic (except for the Category tag). Provide a detailed profess
     let fullResponse = response.text;
 
     // RAG: Add mechanic recommendation
-    const mechanics = await findRecommendedMechanics(fullResponse, userLocation);
-    const recommendations = formatMechanicRecommendations(mechanics);
+    // Extract category first to pass it for boosting
+    const categoryMatch = fullResponse.match(/Category=([\w\u0600-\u06FF]+)/i);
+    const category = categoryMatch ? categoryMatch[1].trim() : null;
+
+    const mechanics = await findRecommendedMechanics(fullResponse, userLocation, category);
 
     // Clean the response
     const displayResponse = fullResponse.replace(/Category=[\w\u0600-\u06FF]+/i, '').trim();
 
-    console.log('Gemini audio result received with', mechanics.length, 'mechanic recommendation');
-    return displayResponse + recommendations;
+    console.log(`Gemini audio result: Category=${category}, Found ${mechanics.length} mechanics`);
+
+    return {
+      diagnosis: displayResponse,
+      mechanic: mechanics[0] || null
+    };
+
   } catch (error) {
     console.log('Audio analysis not supported, returning helpful message');
-    return `تم استلام الملف الصوتي (${audioBuffer.length} بايت).
+    return {
+      diagnosis: `تم استلام الملف الصوتي (${audioBuffer.length} بايت).
 
 للتشخيص الصوتي للسيارة:
 1. حاول وصف الصوت الذي تسمعه بالنص
 2. أو ارفع فيديو يظهر المشكلة
 3. أصوات السيارات الشائعة: طرق، صرير، طحن، خشخشة، صفير
 
-ملاحظة: إذا لم يكن تحليل الصوت متاحًا، يرجى وصف الصوت بالنص للحصول على أفضل النتائج.`;
+ملاحظة: إذا لم يكن تحليل الصوت متاحًا، يرجى وصف الصوت بالنص للحصول على أفضل النتائج.`,
+      mechanic: null
+    };
   }
 }
 
@@ -376,7 +399,8 @@ exports.diagnose = async (req, res, next) => {
 
     res.json({
       success: true,
-      diagnosis: result,
+      diagnosis: result.diagnosis,
+      recommendedMechanic: result.mechanic,
       type: req.body.text ? 'text' : req.file.mimetype.startsWith('image/') ? 'image' : 'audio',
       provider: 'Google Gemini 2.5 Flash + RAG'
     });
