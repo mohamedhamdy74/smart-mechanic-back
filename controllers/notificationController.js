@@ -79,3 +79,22 @@ exports.markAllAsRead = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.getUnreadCount = async (req, res, next) => {
+  try {
+    let query = { recipientId: req.user.id, read: false };
+
+    if (req.user.role === 'workshop') {
+      query.type = 'product_order';
+    } else if (req.user.role === 'mechanic') {
+      query.type = { $in: ['booking_request', 'booking_accepted', 'booking_completed', 'new_message'] };
+    } else if (req.user.role === 'client') {
+      query.type = { $in: ['order_status_update', 'booking_status_update', 'new_message'] };
+    }
+
+    const count = await Notification.countDocuments(query);
+    res.json({ count });
+  } catch (err) {
+    next(err);
+  }
+};

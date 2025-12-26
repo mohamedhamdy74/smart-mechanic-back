@@ -12,7 +12,7 @@ const cacheMiddleware = (duration = 60) => {
     }
 
     // Skip caching for dynamic queries with frequent changes
-    if (req.query && (req.query.page || req.query.search || req.query.sortBy)) {
+    if (req.query && (req.query.page || req.query.search || req.query.sortBy || req.query.workshopId)) {
       return next();
     }
 
@@ -34,7 +34,7 @@ const cacheMiddleware = (duration = 60) => {
     let responseSent = false;
 
     // Override json method to cache response
-    res.json = function(data) {
+    res.json = function (data) {
       if (responseSent) return; // Prevent double sending
       responseSent = true;
 
@@ -54,7 +54,7 @@ const cacheMiddleware = (duration = 60) => {
 
     // Also handle send method for non-JSON responses
     const originalSend = res.send;
-    res.send = function(data) {
+    res.send = function (data) {
       if (responseSent) return;
       responseSent = true;
       return originalSend.call(this, data);

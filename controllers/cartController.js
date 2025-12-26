@@ -37,10 +37,19 @@ exports.addItem = async (req, res, next) => {
 
     // Find existing item
     const existing = user.cart.find((c) => c.productId?.toString() === productId.toString());
+
     if (existing) {
-      existing.quantity = (existing.quantity || 1) + Number(quantity);
+      const newQuantity = (existing.quantity || 0) + Number(quantity);
+      if (newQuantity <= 0) {
+        // Remove item if quantity matches 0 or less
+        user.cart.pull(existing._id);
+      } else {
+        existing.quantity = newQuantity;
+      }
     } else {
-      user.cart.push({ productId, quantity: Number(quantity) });
+      if (Number(quantity) > 0) {
+        user.cart.push({ productId, quantity: Number(quantity) });
+      }
     }
 
     await user.save();

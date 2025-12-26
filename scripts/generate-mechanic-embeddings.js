@@ -35,14 +35,19 @@ async function generateMechanicEmbeddings() {
                 }
 
                 // Generate embedding
-                console.log(`🔄 Generating embedding for: ${mechanic.name}...`);
+                console.log(`\n🔄 Generating embedding for: ${mechanic.name}`);
+                console.log(`   Text: "${profileText.substring(0, 50)}..."`);
+
+                // Force fresh embedding
                 const embedding = await getEmbedding(profileText);
+
+                console.log(`   Generated: [${embedding.slice(0, 3).join(', ')}...]`);
 
                 // Update mechanic
                 mechanic.mechanicProfileEmbedding = embedding;
-                await mechanic.save({ validateBeforeSave: false }); // Skip validation to avoid password rehash
+                await mechanic.save({ validateBeforeSave: false });
 
-                console.log(`✅ ${mechanic.name} - ${embedding.length} dimensions`);
+                console.log(`✅ Saved ${mechanic.name}`);
                 successCount++;
 
                 // Add small delay to avoid rate limiting

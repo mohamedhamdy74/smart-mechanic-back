@@ -120,6 +120,7 @@ exports.createOrder = async (req, res, next) => {
 
       orderProducts.push({
         productId: product.productId || product.id,
+        name: productDoc.name, // Save the product name
         quantity,
         price
       });
@@ -352,9 +353,29 @@ exports.confirmReceipt = async (req, res, next) => {
 exports.getWorkshopStats = async (req, res, next) => {
   try {
     const workshopId = req.user.id;
-    const currentMonth = new Date();
-    currentMonth.setDate(1);
-    currentMonth.setHours(0, 0, 0, 0);
+    const { period = 'month' } = req.query;
+
+    // Calculate start date based on period
+    const now = new Date();
+    let startDate = new Date();
+
+    switch (period) {
+      case 'week':
+        startDate.setDate(now.getDate() - 7);
+        break;
+      case 'month':
+        startDate.setMonth(now.getMonth() - 1);
+        break;
+      case 'quarter':
+        startDate.setMonth(now.getMonth() - 3);
+        break;
+      case 'year':
+        startDate.setFullYear(now.getFullYear() - 1);
+        break;
+      default:
+        startDate.setMonth(now.getMonth() - 1);
+    }
+    startDate.setHours(0, 0, 0, 0);
 
     const mongoose = require('mongoose');
 
@@ -364,7 +385,7 @@ exports.getWorkshopStats = async (req, res, next) => {
         $match: {
           workshopId: new mongoose.Types.ObjectId(workshopId),
           status: { $in: ['completed', 'shipped'] },
-          createdAt: { $gte: currentMonth }
+          createdAt: { $gte: startDate }
         }
       },
       {
@@ -421,7 +442,7 @@ exports.getWorkshopStats = async (req, res, next) => {
         $match: {
           workshopId: new mongoose.Types.ObjectId(workshopId),
           status: { $in: ['completed', 'shipped'] },
-          createdAt: { $gte: currentMonth }
+          createdAt: { $gte: startDate }
         }
       },
       {

@@ -19,6 +19,7 @@ const orderSchema = new mongoose.Schema(
           ref: "Product",
           required: true,
         },
+        name: { type: String }, // Store product name at the time of purchase
         quantity: { type: Number, required: true },
         price: { type: Number, required: true },
       },

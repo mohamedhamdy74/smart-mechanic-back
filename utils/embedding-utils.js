@@ -9,31 +9,28 @@ const embeddingCache = new Map();
 const CACHE_LIMIT = 1000;
 
 /**
- * Generate an embedding vector for a given text using Gemini's text‑embedding‑004 model.
+ * Generate an embedding for the given text using Gemini.
  * @param {string} text The text to embed.
- * @returns {Promise<number[]>} Array of float numbers.
+ * @returns {Promise<number[]>} The embedding vector.
  */
 async function getEmbedding(text) {
-    // Check cache first
-    if (embeddingCache.has(text)) {
-        return embeddingCache.get(text);
-    }
-
     try {
-        const model = genai.getGenerativeModel({ model: "text-embedding-004" });
-        // embedContent expects a content object; using role "user" and a single text part.
-        const result = await model.embedContent({ content: { role: "user", parts: [{ text }] } });
-        const embedding = result?.embedding?.values || [];
-
-        // Cache the result
-        if (embedding.length > 0) {
-            if (embeddingCache.size >= CACHE_LIMIT) {
-                // Remove oldest entry (first key)
-                const firstKey = embeddingCache.keys().next().value;
-                embeddingCache.delete(firstKey);
-            }
-            embeddingCache.set(text, embedding);
+        // Check cache first
+        if (embeddingCache.has(text)) {
+            return embeddingCache.get(text);
         }
+
+        const model = genai.getGenerativeModel({ model: "text-embedding-004" });
+        const result = await model.embedContent(text);
+        const embedding = result.embedding.values;
+
+        // Cache the embedding
+        if (embeddingCache.size >= CACHE_LIMIT) {
+            // Remove oldest entry
+            const firstKey = embeddingCache.keys().next().value;
+            embeddingCache.delete(firstKey);
+        }
+        embeddingCache.set(text, embedding);
 
         return embedding;
     } catch (error) {

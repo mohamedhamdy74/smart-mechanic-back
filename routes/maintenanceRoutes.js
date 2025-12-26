@@ -28,4 +28,10 @@ router.post("/log", (req, res, next) => {
 // PATCH /maintenance/update-km - Update car mileage
 router.patch("/update-km", maintenanceController.updateMileage);
 
+// GET /maintenance/upcoming - Get upcoming maintenance tasks
+router.get("/upcoming", maintenanceController.getUpcomingTasks);
+
+// PATCH /maintenance/task/:planId/:taskId/complete - Mark task as completed
+router.patch("/task/:planId/:taskId/complete", maintenanceController.completeTask);
+
 module.exports = router;

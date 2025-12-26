@@ -21,6 +21,7 @@
     "@google/genai": "^1.30.0",
     "@google/generative-ai": "^0.24.1",
     "@huggingface/inference": "^4.13.3",
+    "arabic-reshaper": "^1.1.0",
     "bcrypt": "^5.1.0",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
@@ -34,8 +35,10 @@
     "morgan": "^1.10.0",
     "multer": "^2.0.2",
     "node-cache": "^5.1.2",
+    "node-cron": "^4.2.1",
     "node-fetch": "^2.7.0",
     "pdfkit": "^0.17.2",
+    "rtl-css": "^1.0.0",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {

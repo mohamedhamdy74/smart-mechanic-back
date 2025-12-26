@@ -60,9 +60,31 @@ const createMessage = async (req, res) => {
 
       await notification.save();
       console.log('Message notification created for user:', receiverId);
+
+      // Emit real-time notification to receiver (for the bell)
+      if (global.emitNotificationToUser) {
+        global.emitNotificationToUser(receiverId, {
+          _id: notification._id,
+          type: notification.type,
+          title: notification.title,
+          message: notification.message,
+          data: notification.data,
+          createdAt: notification.createdAt,
+          read: false
+        });
+      }
+
     } catch (notifError) {
       console.error("Error creating message notification:", notifError);
       // Don't fail the message send if notification fails
+    }
+
+    // Emit real-time message to receiver
+    if (global.io) {
+      global.io.to(receiverId).emit("receive_message", message);
+      console.log(`Socket message emitted to ${receiverId}`);
+    } else {
+      console.warn("Socket.io not initialized globally");
     }
 
     res.status(201).json({

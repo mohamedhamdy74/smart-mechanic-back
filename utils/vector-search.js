@@ -55,6 +55,7 @@ async function vectorSearchMechanics(diagnosis, userLocation = null, category = 
         // Optimization: Only fetch necessary fields to reduce memory usage
         const mechanics = await User.find({
             role: "mechanic",
+            isApproved: true,
             availabilityStatus: "available",
             mechanicProfileEmbedding: { $exists: true, $ne: [] }
         })

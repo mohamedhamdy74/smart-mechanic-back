@@ -42,11 +42,17 @@ router.get("/stats", async (req, res) => {
 
     const completedBookingRevenue = await Booking.aggregate([
       { $match: { status: "completed" } },
-      { $group: { _id: null, total: { $sum: "$totalCost" } } },
+      { $group: { _id: null, total: { $sum: "$actualCost" } } },
+    ]);
+
+    const platformEarnings = await Booking.aggregate([
+      { $match: { status: "completed", "invoice.platformFee": { $exists: true } } },
+      { $group: { _id: null, total: { $sum: "$invoice.platformFee" } } },
     ]);
 
     const orderRevenue = completedOrderRevenue[0]?.total || 0;
     const bookingRevenue = completedBookingRevenue[0]?.total || 0;
+    const platformProfits = platformEarnings[0]?.total || 0;
     const totalRevenue = orderRevenue + bookingRevenue;
 
     res.json({
@@ -70,11 +76,104 @@ router.get("/stats", async (req, res) => {
         total: totalRevenue,
         fromOrders: orderRevenue,
         fromBookings: bookingRevenue,
+        platformProfits: platformProfits,
       },
     });
   } catch (error) {
     console.error("Error fetching admin stats:", error);
     res.status(500).json({ message: "Error fetching statistics" });
+  }
+});
+
+// Recent Activities
+router.get("/activities", async (req, res) => {
+  try {
+    const User = require("../models/User");
+    const Order = require("../models/Order");
+    const Booking = require("../models/Booking");
+    const Product = require("../models/Product");
+
+    // Fetch recent users
+    const recentUsers = await User.find()
+      .select("name createdAt role")
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+    // Fetch recent orders
+    const recentOrders = await Order.find()
+      .populate("userId", "name")
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+    // Fetch recent bookings
+    const recentBookings = await Booking.find()
+      .populate("customerId", "name")
+      .populate("mechanicId", "name")
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+    // Extract recent reviews from bookings
+    const bookingsWithReviews = await Booking.find({ "reviews.0": { $exists: true } })
+      .populate("customerId", "name")
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+    const recentReviews = bookingsWithReviews.flatMap(booking =>
+      booking.reviews.map(review => ({
+        type: 'review',
+        action: 'تقييم جديد',
+        user: booking.customerId?.name || 'عميل',
+        detail: `تقييم ${review.rating} نجوم`,
+        createdAt: review.createdAt || booking.updatedAt,
+      }))
+    );
+
+    // Fetch recent products
+    const recentProducts = await Product.find()
+      .populate("userId", "name")
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+    // Normalize activities
+    const activities = [
+      ...recentUsers.map(u => ({
+        type: 'user',
+        action: 'مستخدم جديد',
+        user: u.name,
+        detail: u.role === 'client' ? 'عميل جديد' : u.role === 'mechanic' ? 'ميكانيكي جديد' : 'مركز خدمة جديد',
+        createdAt: u.createdAt
+      })),
+      ...recentOrders.map(o => ({
+        type: 'order',
+        action: 'طلب جديد',
+        user: o.userId?.name || 'عميل',
+        detail: `طلب بمبلغ ${o.totalAmount} ج.م`,
+        createdAt: o.createdAt
+      })),
+      ...recentBookings.map(b => ({
+        type: 'booking',
+        action: 'موعد محجوز',
+        user: b.customerId?.name || 'عميل',
+        detail: `حجز مع ${b.mechanicId?.name || 'ميكانيكي'}`,
+        createdAt: b.createdAt
+      })),
+      ...recentReviews,
+      ...recentProducts.map(p => ({
+        type: 'product',
+        action: 'منتج جديد',
+        user: p.userId?.name || 'متجر',
+        detail: p.name,
+        createdAt: p.createdAt
+      }))
+    ];
+
+    // Sort all activities by date
+    activities.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json({ activities: activities.slice(0, 20) });
+  } catch (error) {
+    console.error("Error fetching recent activities:", error);
+    res.status(500).json({ message: "Error fetching activities" });
   }
 });
 
@@ -91,6 +190,10 @@ router.get("/reviews", adminReviewsController.listReviews);
 router.get("/reviews/:id", adminReviewsController.getReviewDetails);
 router.patch("/reviews/:id/hide", adminReviewsController.toggleHideReview);
 router.delete("/reviews/:id", adminReviewsController.softDeleteReview);
+
+// Pending registrations for mechanics/workshops
+router.get("/pending-registrations", userController.getPendingRegistrations);
+router.post("/pending-registrations/:id/approve", userController.approveRegistration);
 
 // Pending changes management
 // router.get("/pending-changes", userController.getPendingMechanicUpdates);
@@ -305,7 +408,7 @@ router.get("/shops", async (req, res) => {
     const shopsWithStats = await Promise.all(
       shops.map(async (shop) => {
         const productsCount = await Product.countDocuments({
-          workshopId: shop._id,
+          userId: shop._id,
         });
         const totalRevenue = await Order.aggregate([
           { $match: { workshopId: shop._id, status: "completed" } },
@@ -360,10 +463,10 @@ router.get("/products", async (req, res) => {
     // Get workshop info for each product
     const productsWithShops = await Promise.all(
       products.map(async (product) => {
-        const workshop = await User.findById(product.workshopId).select("name");
+        const workshop = await User.findById(product.userId).select("name");
         return {
           ...product.toObject(),
-          workshopName: workshop?.name || "Unknown Workshop",
+          workshopName: workshop?.name || "غير محدد",
         };
       })
     );
@@ -442,6 +545,9 @@ router.get("/analytics", async (req, res) => {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
+    const prevStartDate = new Date(startDate);
+    prevStartDate.setDate(prevStartDate.getDate() - days);
+
     const Order = require("../models/Order");
     const Booking = require("../models/Booking");
     const User = require("../models/User");
@@ -519,7 +625,6 @@ router.get("/analytics", async (req, res) => {
       {
         $match: {
           "reviews.0": { $exists: true },
-          "reviews.hidden": { $ne: true },
         },
       },
       { $unwind: "$reviews" },
@@ -532,11 +637,43 @@ router.get("/analytics", async (req, res) => {
       { $sort: { _id: 1 } },
     ]);
 
+    // Calculate detailed Performance Metrics
+    const totalBookings = await Booking.countDocuments({ createdAt: { $gte: startDate } });
+    const completedBookings = await Booking.countDocuments({ status: "completed", createdAt: { $gte: startDate } });
+    const successRate = totalBookings > 0 ? (completedBookings / totalBookings) * 100 : 0;
+
+    const avgMechanicStats = await User.aggregate([
+      { $match: { role: "mechanic" } },
+      { $group: { _id: null, avgResponse: { $avg: "$responseTime" }, avgRating: { $avg: "$rating" } } }
+    ]);
+
+    // Growth calculation
+    const currentPeriodOrders = await Order.countDocuments({ createdAt: { $gte: startDate } });
+    const prevPeriodOrders = await Order.countDocuments({
+      createdAt: { $gte: prevStartDate, $lt: startDate }
+    });
+    const monthlyGrowth = prevPeriodOrders > 0
+      ? ((currentPeriodOrders - prevPeriodOrders) / prevPeriodOrders) * 100
+      : (currentPeriodOrders > 0 ? 100 : 0);
+
+    // Revenue in current period
+    const currentRevenue = await Order.aggregate([
+      { $match: { createdAt: { $gte: startDate }, status: "completed" } },
+      { $group: { _id: null, total: { $sum: "$totalAmount" } } }
+    ]);
+
     res.json({
       sales: salesData,
       bookings: bookingsData,
       userGrowth,
       ratings: ratingAnalytics,
+      performance: {
+        successRate: Number(successRate.toFixed(1)),
+        avgResponseTime: Number((avgMechanicStats[0]?.avgResponse || 0).toFixed(1)),
+        avgRating: Number((avgMechanicStats[0]?.avgRating || 0).toFixed(1)),
+        monthlyGrowth: Number(monthlyGrowth.toFixed(1)),
+        totalRevenue: currentRevenue[0]?.total || 0
+      }
     });
   } catch (error) {
     console.error("Error fetching analytics:", error);

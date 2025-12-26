@@ -120,10 +120,35 @@ exports.generatePlan = async (req, res) => {
         // Generate AI plan
         const aiPlan = await generateMaintenancePlan(carData, logs);
 
+        // Calculate dueDate and status for each task
+        const upcomingWithDates = aiPlan.upcoming.map(task => {
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + task.estimatedDays);
+
+            // Calculate initial status
+            const now = new Date();
+            const timeDiff = dueDate.getTime() - now.getTime();
+            const daysRemaining = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+
+            let status = 'pending';
+            if (daysRemaining < 0) {
+                status = 'overdue';
+            } else if (daysRemaining <= 7) {
+                status = 'due_soon';
+            }
+
+            return {
+                ...task,
+                dueDate,
+                status,
+                notificationSent: false
+            };
+        });
+
         // Save plan to database
         const plan = new MaintenancePlan({
             userId,
-            upcoming: aiPlan.upcoming,
+            upcoming: upcomingWithDates,
             warnings: aiPlan.warnings,
             recommended: aiPlan.recommended,
             carHealthScore: aiPlan.carHealthScore,
@@ -226,10 +251,35 @@ exports.addLog = async (req, res) => {
         // Regenerate AI plan
         const aiPlan = await generateMaintenancePlan(carData, logs);
 
+        // Calculate dueDate and status for each task
+        const upcomingWithDates = aiPlan.upcoming.map(task => {
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + task.estimatedDays);
+
+            // Calculate initial status
+            const now = new Date();
+            const timeDiff = dueDate.getTime() - now.getTime();
+            const daysRemaining = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+
+            let status = 'pending';
+            if (daysRemaining < 0) {
+                status = 'overdue';
+            } else if (daysRemaining <= 7) {
+                status = 'due_soon';
+            }
+
+            return {
+                ...task,
+                dueDate,
+                status,
+                notificationSent: false
+            };
+        });
+
         // Save updated plan
         const plan = new MaintenancePlan({
             userId,
-            upcoming: aiPlan.upcoming,
+            upcoming: upcomingWithDates,
             warnings: aiPlan.warnings,
             recommended: aiPlan.recommended,
             carHealthScore: aiPlan.carHealthScore,
@@ -291,10 +341,35 @@ exports.updateMileage = async (req, res) => {
         // Regenerate AI plan with updated mileage
         const aiPlan = await generateMaintenancePlan(carData, logs);
 
+        // Calculate dueDate and status for each task
+        const upcomingWithDates = aiPlan.upcoming.map(task => {
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + task.estimatedDays);
+
+            // Calculate initial status
+            const now = new Date();
+            const timeDiff = dueDate.getTime() - now.getTime();
+            const daysRemaining = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+
+            let status = 'pending';
+            if (daysRemaining < 0) {
+                status = 'overdue';
+            } else if (daysRemaining <= 7) {
+                status = 'due_soon';
+            }
+
+            return {
+                ...task,
+                dueDate,
+                status,
+                notificationSent: false
+            };
+        });
+
         // Save updated plan
         const plan = new MaintenancePlan({
             userId,
-            upcoming: aiPlan.upcoming,
+            upcoming: upcomingWithDates,
             warnings: aiPlan.warnings,
             recommended: aiPlan.recommended,
             carHealthScore: aiPlan.carHealthScore,
@@ -311,6 +386,77 @@ exports.updateMileage = async (req, res) => {
         console.error("Error updating mileage:", error);
         res.status(500).json({
             message: "Failed to update mileage",
+            error: error.message,
+        });
+    }
+};
+
+/**
+ * Get upcoming maintenance tasks with their current status
+ * GET /maintenance/upcoming
+ */
+exports.getUpcomingTasks = async (req, res) => {
+    try {
+        const userId = req.user.id || req.user._id;
+
+        // Find the latest plan for this user
+        const plan = await MaintenancePlan.findOne({ userId }).sort({ createdAt: -1 });
+
+        if (!plan) {
+            return res.status(404).json({ message: "No maintenance plan found for this user" });
+        }
+
+        // Filter out completed tasks and return only upcoming ones
+        const upcomingTasks = plan.upcoming.filter(task => task.status !== 'completed');
+
+        res.status(200).json({
+            tasks: upcomingTasks,
+            totalTasks: upcomingTasks.length
+        });
+    } catch (error) {
+        console.error("Error fetching upcoming tasks:", error);
+        res.status(500).json({
+            message: "Failed to fetch upcoming tasks",
+            error: error.message,
+        });
+    }
+};
+
+/**
+ * Mark a maintenance task as completed
+ * PATCH /maintenance/task/:planId/:taskId/complete
+ */
+exports.completeTask = async (req, res) => {
+    try {
+        const { planId, taskId } = req.params;
+        const userId = req.user.id || req.user._id;
+
+        // Find the plan
+        const plan = await MaintenancePlan.findOne({ _id: planId, userId });
+
+        if (!plan) {
+            return res.status(404).json({ message: "Maintenance plan not found" });
+        }
+
+        // Find the task
+        const task = plan.upcoming.id(taskId);
+
+        if (!task) {
+            return res.status(404).json({ message: "Task not found" });
+        }
+
+        // Update task status
+        task.status = 'completed';
+        await plan.save();
+
+        res.status(200).json({
+            message: "Task marked as completed successfully",
+            task
+        });
+    } catch (error) {
+        console.error("Error completing task:", error);
+        res.status(500).json({
+            message: "Failed to complete task",
             error: error.message,
         });
     }

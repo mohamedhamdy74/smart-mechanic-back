@@ -267,7 +267,7 @@ exports.updateBookingStatus = async (req, res, next) => {
 // Complete service and generate invoice
 exports.completeService = async (req, res, next) => {
   try {
-    const { workDescription, cost, parts, laborCost } = req.body;
+    const { workDescription, cost, parts } = req.body;
     const booking = await Booking.findById(req.params.id);
 
     if (!booking) return res.status(404).json({ message: "Booking not found" });
@@ -297,19 +297,18 @@ exports.completeService = async (req, res, next) => {
     const serviceRecord = {
       mechanicId: req.user.id,
       workDescription,
-      cost: parseFloat(cost), // parts cost
+      cost: parseFloat(cost),
       parts: processedParts,
-      laborCost: parseFloat(laborCost),
+      laborCost: 0,
       createdAt: new Date()
     };
 
     booking.serviceRecords.push(serviceRecord);
 
-    // Calculate total service cost (parts + labor)
-    const serviceCost = parseFloat(cost) + parseFloat(laborCost);
-    const platformFee = serviceCost * 0.2; // 20%
-    const totalAmount = serviceCost + platformFee; // What customer pays
-    const mechanicAmount = serviceCost; // What mechanic gets
+    // Calculate total service cost (Platform fee 20%, Mechanic gets 80%)
+    const totalAmount = parseFloat(cost);
+    const platformFee = totalAmount * 0.2; // 20% commission for the site
+    const mechanicAmount = totalAmount * 0.8; // 80% for the mechanic
 
     booking.invoice = {
       serviceRecordId: booking.serviceRecords[booking.serviceRecords.length - 1]._id,
@@ -323,7 +322,7 @@ exports.completeService = async (req, res, next) => {
     // Update booking status
     booking.status = 'completed';
     booking.completedAt = new Date();
-    booking.actualCost = serviceCost;
+    booking.actualCost = totalAmount;
 
     await booking.save();
 
@@ -332,6 +331,38 @@ exports.completeService = async (req, res, next) => {
     if (mechanic) {
       mechanic.completedBookings = (mechanic.completedBookings || 0) + 1;
       await mechanic.save();
+    }
+
+    // Create notification for customer
+    try {
+      const Notification = require("../models/Notification");
+      const completeNotification = new Notification({
+        recipientId: booking.customerId,
+        type: 'booking_completed',
+        title: 'تم إكمال الخدمة',
+        message: `تم إكمال الخدمة بنجاح من قبل ${mechanic.name || 'الفني'}. يرجى مراجعة الفاتورة.`,
+        data: {
+          bookingId: booking._id,
+          invoiceId: booking.invoice._id,
+          totalAmount: booking.invoice.totalAmount
+        }
+      });
+      await completeNotification.save();
+
+      // Emit real-time notification
+      if (global.emitNotificationToUser) {
+        global.emitNotificationToUser(booking.customerId.toString(), {
+          _id: completeNotification._id,
+          type: completeNotification.type,
+          title: completeNotification.title,
+          message: completeNotification.message,
+          data: completeNotification.data,
+          createdAt: completeNotification.createdAt,
+          read: false
+        });
+      }
+    } catch (error) {
+      console.error("Error sending completion notification:", error);
     }
 
     res.json({
@@ -577,6 +608,42 @@ exports.generateInvoicePDF = async (req, res, next) => {
     // Generate PDF using PDFKit
     const PDFDocument = require('pdfkit');
     const doc = new PDFDocument();
+    const path = require('path');
+    const ArabicReshaper = require('arabic-reshaper');
+    // const rtlcss = require('rtl-css'); // Not used for text string reversal
+
+    // Helper to process Arabic text
+    const processArabic = (text) => {
+      try {
+        if (!text) return '';
+        // Reshape Arabic characters (connect letters)
+        const reshaped = ArabicReshaper.convertArabic(text.toString());
+        // Reverse for PDFKit (which writes LTR by default)
+        return reshaped.split('').reverse().join('');
+      } catch (e) {
+        return text;
+      }
+    };
+
+    // Load custom font for Arabic support
+    const fontPath = path.resolve(__dirname, '../fonts/Cairo-Regular.ttf');
+    console.log("Attempting to load font from absolute path:", fontPath);
+
+    try {
+      if (require('fs').existsSync(fontPath)) {
+        console.log("Font file found, applying to document...");
+        doc.font(fontPath); // Set default font directly
+      } else {
+        console.error("CRITICAL ERROR: Cairo font file NOT found at:", fontPath);
+        console.error("Arabic text will likely appear as garbage/symbols.");
+        // Fallback to standard font if available, though it won't support Arabic
+        doc.font('Helvetica');
+      }
+    } catch (e) {
+      console.error("EXCEPTION while loading font:", e);
+      // Fallback
+      doc.font('Helvetica');
+    }
 
     // Set response headers for PDF download
     res.setHeader('Content-Type', 'application/pdf');
@@ -586,61 +653,61 @@ exports.generateInvoicePDF = async (req, res, next) => {
     doc.pipe(res);
 
     // Header
-    doc.fontSize(20).text('فاتورة الخدمة', { align: 'center' });
+    doc.fontSize(20).text(processArabic('فاتورة الخدمة'), { align: 'center' });
     doc.moveDown();
 
     // Invoice details
     doc.fontSize(12);
-    doc.text(`رقم الفاتورة: #${booking._id.toString().slice(-8).toUpperCase()}`, { align: 'right' });
-    doc.text(`تاريخ الفاتورة: ${new Date(booking.invoice.createdAt).toLocaleDateString('ar-EG')}`, { align: 'right' });
-    doc.text(`تاريخ الخدمة: ${new Date(booking.completedAt).toLocaleDateString('ar-EG')}`, { align: 'right' });
+    doc.text(processArabic(`رقم الفاتورة: #${booking._id.toString().slice(-8).toUpperCase()}`), { align: 'right' });
+    doc.text(processArabic(`تاريخ الفاتورة: ${new Date(booking.invoice.createdAt).toLocaleDateString('ar-EG')}`), { align: 'right' });
+    doc.text(processArabic(`تاريخ الخدمة: ${new Date(booking.completedAt).toLocaleDateString('ar-EG')}`), { align: 'right' });
     doc.moveDown();
 
     // Customer and Mechanic info
-    doc.text('معلومات العميل:', { align: 'right' });
-    doc.text(`الاسم: ${booking.customerId.name}`, { align: 'right' });
-    doc.text(`البريد الإلكتروني: ${booking.customerId.email}`, { align: 'right' });
+    doc.text(processArabic('معلومات العميل:'), { align: 'right' });
+    doc.text(processArabic(`الاسم: ${booking.customerId.name}`), { align: 'right' });
+    doc.text(processArabic(`البريد الإلكتروني: ${booking.customerId.email}`), { align: 'right' });
     doc.moveDown();
 
-    doc.text('معلومات الميكانيكي:', { align: 'right' });
-    doc.text(`الاسم: ${booking.mechanicId.name}`, { align: 'right' });
-    doc.text(`التخصص: ${booking.mechanicId.specialty || 'غير محدد'}`, { align: 'right' });
+    doc.text(processArabic('معلومات الميكانيكي:'), { align: 'right' });
+    doc.text(processArabic(`الاسم: ${booking.mechanicId.name}`), { align: 'right' });
+    doc.text(processArabic(`التخصص: ${booking.mechanicId.specialty || 'غير محدد'}`), { align: 'right' });
     doc.moveDown();
 
     // Service details
-    doc.fontSize(14).text('تفاصيل الخدمة:', { align: 'right' });
+    doc.fontSize(14).text(processArabic('تفاصيل الخدمة:'), { align: 'right' });
     doc.fontSize(12);
-    doc.text(`نوع الخدمة: ${booking.serviceType}`, { align: 'right' });
-    doc.text(`السيارة: ${booking.carInfo}`, { align: 'right' });
-    doc.text(`رقم اللوحة: ${booking.licensePlate}`, { align: 'right' });
+    doc.text(processArabic(`نوع الخدمة: ${booking.serviceType}`), { align: 'right' });
+    doc.text(processArabic(`السيارة: ${booking.carInfo}`), { align: 'right' });
+    doc.text(processArabic(`رقم اللوحة: ${booking.licensePlate}`), { align: 'right' });
     doc.moveDown();
 
     // Invoice summary
     doc.moveDown();
-    doc.fontSize(14).text('ملخص الفاتورة:', { align: 'right' });
+    doc.fontSize(14).text(processArabic('ملخص الفاتورة:'), { align: 'right' });
     doc.fontSize(12);
     const serviceCost = booking.invoice.mechanicAmount;
-    doc.text(`تكلفة الخدمة: ${serviceCost} ج.م`, { align: 'right' });
-    doc.text(`رسوم المنصة (20%): ${booking.invoice.platformFee} ج.م`, { align: 'right' });
-    doc.text(`التكلفة الإجمالية: ${booking.invoice.totalAmount} ج.م`, { align: 'right' });
+    doc.text(processArabic(`تكلفة الخدمة: ${serviceCost} ج.م`), { align: 'right' });
+    doc.text(processArabic(`رسوم المنصة (20%): ${booking.invoice.platformFee} ج.م`), { align: 'right' });
+    doc.text(processArabic(`التكلفة الإجمالية: ${booking.invoice.totalAmount} ج.م`), { align: 'right' });
     doc.moveDown();
 
     // Payment status
-    doc.fontSize(14).text('حالة الدفع:', { align: 'right' });
+    doc.fontSize(14).text(processArabic('حالة الدفع:'), { align: 'right' });
     doc.fontSize(12);
-    doc.text(booking.invoice.paymentStatus === 'paid' ? 'تم الدفع' : 'في انتظار الدفع', { align: 'right' });
+    doc.text(processArabic(booking.invoice.paymentStatus === 'paid' ? 'تم الدفع' : 'في انتظار الدفع'), { align: 'right' });
 
     if (booking.invoice.paymentMethod) {
       const paymentMethodText = booking.invoice.paymentMethod === 'visa' ? 'فيزا/ماستركارد' :
         booking.invoice.paymentMethod === 'vodafone_cash' ? 'فودافون كاش' :
           booking.invoice.paymentMethod === 'fawry' ? 'فوري' : booking.invoice.paymentMethod;
-      doc.text(`طريقة الدفع: ${paymentMethodText}`, { align: 'right' });
+      doc.text(processArabic(`طريقة الدفع: ${paymentMethodText}`), { align: 'right' });
     }
 
     // Footer
     doc.moveDown(2);
-    doc.fontSize(10).text('شكراً لاستخدام خدماتنا!', { align: 'center' });
-    doc.text('لأي استفسارات، يرجى الاتصال بنا', { align: 'center' });
+    doc.fontSize(10).text(processArabic('شكراً لاستخدام خدماتنا!'), { align: 'center' });
+    doc.text(processArabic('لأي استفسارات، يرجى الاتصال بنا'), { align: 'center' });
 
     // Finalize the PDF
     doc.end();

@@ -22,8 +22,10 @@ router.patch("/notifications/mark-all-read", authenticate, userController.markAl
 // Public route for viewing mechanics (no authentication required)
 router.get("/mechanics/public", userController.getPublicMechanics);
 
-// Get available mechanics near location
-router.get("/mechanics/available", authenticate, userController.getAvailableMechanics);
+// Public route for getting all mechanic skills with counts
+router.get("/mechanics/skills", userController.getMechanicSkills);
+
+
 
 // Admin routes for mechanic profile approval - MUST come before /:id routes
 router.get("/admin/pending-updates", authenticate, authorize("admin"), userController.getPendingMechanicUpdates);
@@ -58,11 +60,9 @@ router.post("/:id/avatar", authenticate, require("../middlewares/upload").single
 // Get mechanic reviews
 router.get("/:id/reviews", authenticate, userController.getMechanicReviews);
 
-// Get mechanic location
-router.get("/:id/location", authenticate, userController.getMechanicLocation);
 
-// Update mechanic location
-router.post("/:id/location", authenticate, authorize("mechanic"), userController.updateMechanicLocation);
+
+
 
 // Approve mechanic updates
 router.patch("/:id/approve-updates", authenticate, authorize("admin"), userController.approveMechanicUpdates);

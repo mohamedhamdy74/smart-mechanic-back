@@ -19,6 +19,12 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true },
     phone: { type: String },
     location: { type: String, required: true },
+    cart: [
+      {
+        productId: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+        quantity: { type: Number, default: 1 }
+      }
+    ],
     // Client fields
     carBrand: { type: String },
     carModel: { type: String },
@@ -64,6 +70,7 @@ const userSchema = new mongoose.Schema(
     workshopName: { type: String },
     workshopAddress: { type: String },
     isVerified: { type: Boolean, default: false },
+    isApproved: { type: Boolean, default: false },
     description: { type: String },
     services: [{ type: String }],
     workingHours: { type: String },
@@ -72,12 +79,12 @@ const userSchema = new mongoose.Schema(
 );
 
 // Indexes for fast lookup
-userSchema.index({ role: 1, createdAt: -1 }); // filter mechanics
-userSchema.index({ role: 1, rating: -1, completedBookings: -1 }); // sort by rating/experience
+userSchema.index({ role: 1, isApproved: 1, createdAt: -1 }); // filter mechanics/workshops
+userSchema.index({ role: 1, isApproved: 1, rating: -1, completedBookings: -1 }); // sort by rating/experience
 userSchema.index({ email: 1 });
-userSchema.index({ latitude: 1, longitude: 1 }); // location queries
-userSchema.index({ availabilityStatus: 1 });
-userSchema.index({ location: "2dsphere" }); // geospatial queries
+userSchema.index({ latitude: 1, longitude: 1, isApproved: 1 }); // location queries using lat/lng
+userSchema.index({ availabilityStatus: 1, isApproved: 1 });
+// Removed 2dsphere index - using latitude/longitude instead
 userSchema.index({ name: 1 });
 userSchema.index({ phone: 1 });
 

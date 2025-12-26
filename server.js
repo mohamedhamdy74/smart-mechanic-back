@@ -7,9 +7,19 @@ const http = require("http");
 const socketIo = require("socket.io");
 const app = express();
 const server = http.createServer(app);
+
+// CORS Configuration - supports both development and production
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://10.171.240.121:8081',
+    'http://localhost:8080', 'http://localhost:8081', 'http://localhost:8082',
+    'http://localhost:8083', 'http://localhost:8085', 'http://localhost:5173',
+    'http://127.0.0.1:8080', 'http://127.0.0.1:8081', 'http://127.0.0.1:5173',
+  ];
+
 const io = socketIo(server, {
   cors: {
-    origin: ['http://localhost:8080', 'http://localhost:8081', 'http://localhost:8082', 'http://localhost:8083', 'http://localhost:8085', 'http://127.0.0.1:8080', 'http://127.0.0.1:8081', 'http://127.0.0.1:8082', 'http://127.0.0.1:8083', 'http://127.0.0.1:8085', 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://192.168.1.7:8080', 'http://192.168.1.7:8081', 'http://192.168.1.7:8082', 'http://192.168.1.7:8083', 'http://192.168.1.7:8085', 'http://192.168.1.7:5173', 'exp://192.168.1.7:8081', 'http://10.171.240.181:8080', 'http://10.171.240.181:8081', 'http://10.171.240.181:8082', 'http://10.171.240.181:8083', 'http://10.171.240.181:8085', 'exp://10.171.240.181:8081'],
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST']
   }
@@ -35,12 +45,22 @@ app.use(morgan("dev"));
 
 // Configure CORS to allow requests from our frontend
 app.use(cors({
-  origin: ['http://localhost:8080', 'http://localhost:8081', 'http://localhost:8082', 'http://localhost:8083', 'http://localhost:8085', 'http://127.0.0.1:8080', 'http://127.0.0.1:8081', 'http://127.0.0.1:8082', 'http://127.0.0.1:8083', 'http://127.0.0.1:8085', 'http://localhost:5173', 'http://127.0.0.1:5173', 'http://192.168.1.7:8080', 'http://192.168.1.7:8081', 'http://192.168.1.7:8082', 'http://192.168.1.7:8083', 'http://192.168.1.7:8085', 'http://192.168.1.7:5173', 'exp://192.168.1.7:8081', 'http://10.171.240.181:8080', 'http://10.171.240.181:8081', 'http://10.171.240.181:8082', 'http://10.171.240.181:8083', 'http://10.171.240.181:8085', 'http://10.171.240.181:5173', 'exp://10.171.240.181:8081'],
-  credentials: true, // Allow credentials (cookies, authorization headers)
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or Postman)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`CORS blocked origin: ${origin}`);
+      callback(null, true); // Allow in development, can change to false in production
+    }
+  },
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
   exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  optionsSuccessStatus: 200 // Some legacy browsers choke on 204
+  optionsSuccessStatus: 200
 }));
 
 // Handle preflight requests
@@ -56,7 +76,7 @@ app.use((req, res, next) => {
 app.use('/auth', authLimiter);
 // app.use('/bookings', bookingLimiter); // Temporarily disabled for development
 app.use('/users/avatar', uploadLimiter);
-app.use('/products', uploadLimiter);
+
 app.use(apiLimiter);
 
 // Static files
@@ -158,6 +178,7 @@ const emitNotificationToUser = (userId, notification) => {
 
 // Export the emit function for use in controllers
 global.emitNotificationToUser = emitNotificationToUser;
+global.io = io;
 
 // DB Connection & Server Start
 const PORT = process.env.PORT || 5000;
@@ -177,6 +198,11 @@ const dbOptions = {
 mongoose.connect(MONGO_URI, dbOptions)
   .then(() => {
     console.log('✅ Connected to MongoDB successfully!');
+
+    // Start maintenance scheduler
+    const { startMaintenanceScheduler } = require('./services/maintenanceScheduler');
+    startMaintenanceScheduler();
+
     server.listen(PORT, HOST, () => {
       console.log(`🚀 Server is running on http://${HOST}:${PORT}`);
       console.log(`🔌 Socket.IO is ready for real-time connections`);

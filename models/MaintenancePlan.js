@@ -12,11 +12,18 @@ const maintenancePlanSchema = new mongoose.Schema(
                 task: { type: String, required: true },
                 dueAtKM: { type: Number, required: true },
                 estimatedDays: { type: Number, required: true },
+                dueDate: { type: Date, required: true },
                 priority: {
                     type: String,
                     enum: ["High", "Medium", "Low"],
                     required: true,
                 },
+                status: {
+                    type: String,
+                    enum: ["pending", "due_soon", "overdue", "completed"],
+                    default: "pending"
+                },
+                notificationSent: { type: Boolean, default: false },
             },
         ],
         warnings: [{ type: String }],

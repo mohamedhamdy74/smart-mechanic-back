@@ -1,7 +1,8 @@
- const User = require("../models/User");
+const User = require("../models/User");
 const { validationResult } = require("express-validator");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
+const { getEmbedding } = require("../utils/embedding-utils");
 
 exports.getAllUsers = async (req, res, next) => {
   try {
@@ -49,13 +50,13 @@ exports.getPublicMechanics = async (req, res, next) => {
     // ✅ شغل استعلامين find و countDocuments في نفس الوقت لتقليل التأخير
     // ✅ استخدم lean() لتحسين الأداء وتقليل الذاكرة
     const [mechanics, count] = await Promise.all([
-      User.find(query)
+      User.find({ ...query, isApproved: true })
         .select("-password -pendingUpdates")
         .sort({ rating: -1, completedBookings: -1, createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(Number(limit))
         .lean(),
-      User.countDocuments(query),
+      User.countDocuments({ ...query, isApproved: true }),
     ]);
 
     // ✅ تحويل البيانات للعرض مع منطق التقييم كما هو
@@ -87,7 +88,8 @@ exports.getPublicMechanics = async (req, res, next) => {
         email: mechanic.email,
         location: mechanic.location || "أسوان",
         services: skills,
-        image: "/placeholder.svg",
+        image: mechanic.profileImage ? `http://localhost:5000/${mechanic.profileImage}` : null,
+        profileImage: mechanic.profileImage,
         latitude: mechanic.latitude,
         longitude: mechanic.longitude,
         lastLocationUpdate: mechanic.lastLocationUpdate,
@@ -99,6 +101,58 @@ exports.getPublicMechanics = async (req, res, next) => {
       total: count,
       page: Number(page),
       pages: Math.ceil(count / limit),
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Get all mechanic skills with counts (public endpoint)
+exports.getMechanicSkills = async (req, res, next) => {
+  try {
+    // Aggregate skills from all mechanics
+    const skillsAggregation = await User.aggregate([
+      { $match: { role: "mechanic" } },
+      { $unwind: { path: "$skills", preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: { $ifNull: ["$skills", "صيانة عامة"] },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { count: -1 } }
+    ]);
+
+    // Map icons for common services
+    const iconMap = {
+      "ميكانيكي عام": "Wrench",
+      "صيانة عامة": "Wrench",
+      "إصلاح المحركات": "Settings",
+      "إصلاح الكهرباء": "Battery",
+      "كهرباء السيارات": "Battery",
+      "إصلاح الفرامل": "Shield",
+      "فرامل": "Shield",
+      "تغيير الزيوت": "Droplet",
+      "تغيير الزيت": "Droplet",
+      "إصلاح الإطارات": "Gauge",
+      "فحص شامل": "TrendingUp",
+      "صيانة دورية": "Settings",
+      "إصلاح الهيكل": "Car",
+      "طلاء السيارات": "Car",
+      "إصلاح ناقل الحركة": "Zap",
+      "تكييف": "Wind",
+      "نظام التبريد": "Thermometer",
+    };
+
+    const skills = skillsAggregation.map(skill => ({
+      title: skill._id,
+      count: skill.count,
+      icon: iconMap[skill._id] || "Wrench"
+    }));
+
+    res.json({
+      skills,
+      total: skills.length
     });
   } catch (err) {
     next(err);
@@ -214,8 +268,19 @@ exports.updateUser = async (req, res, next) => {
       });
     } else {
       // Direct update for clients, workshops, or admin updates
-      Object.assign(user, req.body);
+      console.log('Previous user data:', user.toObject());
+      console.log('Updating with body:', req.body);
+
+      // Explicitly update fields to ensure mongoose tracks changes
+      Object.keys(req.body).forEach(key => {
+        user[key] = req.body[key];
+      });
+
+      // Mark fields as modified if needed (though direct assignment usually works)
+      if (req.body.location) user.markModified('location');
+
       await user.save();
+      console.log('Updated user data:', user.toObject());
 
       const userData = user.toObject();
       delete userData.password;
@@ -256,8 +321,13 @@ exports.updateAvailability = async (req, res, next) => {
 // Register a new user
 exports.register = async (req, res, next) => {
   try {
+    // DEBUG: Log the incoming request body
+    console.log('[DEBUG] Register request body:', JSON.stringify(req.body, null, 2));
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      // DEBUG: Log the validation errors
+      console.log('[DEBUG] Validation errors:', JSON.stringify(errors.array(), null, 2));
       return res.status(400).json({
         success: false,
         errors: errors.array(),
@@ -337,7 +407,28 @@ exports.register = async (req, res, next) => {
       plateNumber: plateNumber || undefined,
       lastMaintenance: lastMaintenance || undefined,
       dealership: dealership || undefined,
+      isApproved: role === 'client' ? true : false, // Clients are auto-approved, others need admin
     });
+
+    // Generate embedding for mechanic immediately
+    if (role === 'mechanic') {
+      try {
+        const profileText = [
+          name,
+          specialty,
+          skills?.join(' '),
+          experienceYears ? `${experienceYears} years experience` : ''
+        ].filter(Boolean).join(' ');
+
+        if (profileText) {
+          console.log(`[DEBUG] Generating initial embedding for mechanic: ${name}`);
+          user.mechanicProfileEmbedding = await getEmbedding(profileText);
+        }
+      } catch (embedError) {
+        console.error(`[WARN] Failed to generate initial embedding for ${name}:`, embedError.message);
+        // Non-blocking error
+      }
+    }
 
     // Save user to database
     await user.save();
@@ -420,6 +511,44 @@ exports.deleteUser = async (req, res, next) => {
     const user = await User.findByIdAndDelete(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });
     res.json({ message: "User deleted" });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Get pending registrations (mechanics and workshops)
+exports.getPendingRegistrations = async (req, res, next) => {
+  try {
+    const users = await User.find({
+      role: { $in: ['mechanic', 'workshop'] },
+      isApproved: false
+    }).select('name email role phone location createdAt workshopName');
+
+    res.json({
+      users,
+      total: users.length
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Approve registration (admin only)
+exports.approveRegistration = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.isApproved = true;
+    await user.save();
+
+    const userData = user.toObject();
+    delete userData.password;
+
+    res.json({
+      message: "تمت الموافقة على الحساب بنجاح",
+      user: userData
+    });
   } catch (err) {
     next(err);
   }
@@ -559,8 +688,10 @@ exports.uploadAvatar = async (req, res, next) => {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    // Save avatar path to user profile
-    user.avatar = req.file.path;
+    // Save avatar path to user profile - use profileImage field
+    // Normalize path to use forward slashes for URL
+    const avatarPath = req.file.path.replace(/\\/g, '/');
+    user.profileImage = avatarPath;
     await user.save();
 
     const userData = user.toObject();
@@ -568,7 +699,7 @@ exports.uploadAvatar = async (req, res, next) => {
     res.json({
       message: "Avatar uploaded successfully",
       user: userData,
-      avatarUrl: `http://localhost:5000/${req.file.path}`
+      avatarUrl: `http://localhost:5000/${avatarPath}`
     });
   } catch (err) {
     next(err);
@@ -588,12 +719,12 @@ exports.getMechanicReviews = async (req, res, next) => {
       status: 'completed',
       'reviews.0': { $exists: true }
     })
-    .populate('customerId', 'name')
-    .populate('reviews.clientId', 'name')
-    .select('reviews serviceType carInfo createdAt')
-    .skip((page - 1) * limit)
-    .limit(Number(limit))
-    .sort({ createdAt: -1 });
+      .populate('customerId', 'name')
+      .populate('reviews.clientId', 'name')
+      .select('reviews serviceType carInfo createdAt')
+      .skip((page - 1) * limit)
+      .limit(Number(limit))
+      .sort({ createdAt: -1 });
 
     // Extract reviews from bookings
     const reviews = [];
@@ -625,143 +756,15 @@ exports.getMechanicReviews = async (req, res, next) => {
   }
 };
 
-// Get available mechanics near location
-exports.getAvailableMechanics = async (req, res, next) => {
-  try {
-    const { lat, lng, radius = 10 } = req.query; // radius in km
 
-    if (!lat || !lng) {
-      return res.status(400).json({ message: "Latitude and longitude are required" });
-    }
 
-    // Find available mechanics with location data - use lean() for performance
-    // ✅ استخدم $near للبحث الجغرافي المحسن
-    const mechanics = await User.find({
-      role: 'mechanic',
-      availabilityStatus: 'available',
-      latitude: { $exists: true },
-      longitude: { $exists: true },
-      location: {
-        $near: {
-          $geometry: {
-            type: "Point",
-            coordinates: [parseFloat(lng), parseFloat(lat)]
-          },
-          $maxDistance: parseFloat(radius) * 1000 // Convert km to meters
-        }
-      }
-    })
-    .select('name email phone location latitude longitude rating experienceYears skills specialty avatar completedBookings')
-    .sort({ rating: -1, completedBookings: -1 }) // Sort by rating and experience first
-    .limit(20) // Limit results for performance
-    .lean();
 
-    // Calculate distances and ETA for returned mechanics
-    const userLat = parseFloat(lat);
-    const userLng = parseFloat(lng);
 
-    const mechanicsWithDistance = mechanics.map(mechanic => {
-      const distance = calculateDistance(userLat, userLng, mechanic.latitude, mechanic.longitude);
-      return {
-        ...mechanic,
-        distance: Math.round(distance * 100) / 100, // Round to 2 decimal places
-        eta: Math.round((distance / 30) * 60) // ETA in minutes (assuming 30 km/h average speed)
-      };
-    });
 
-    res.json({
-      mechanics: mechanicsWithDistance,
-      count: mechanicsWithDistance.length,
-      userLocation: { lat: userLat, lng: userLng }
-    });
-  } catch (err) {
-    next(err);
-  }
-};
 
-// Get mechanic location
-exports.getMechanicLocation = async (req, res, next) => {
-  try {
-    // Use lean() and select only needed fields for better performance
-    const mechanic = await User.findById(req.params.id)
-      .select('_id role latitude longitude lastLocationUpdate')
-      .lean();
 
-    if (!mechanic || mechanic.role !== 'mechanic') {
-      return res.status(404).json({ message: "Mechanic not found" });
-    }
 
-    // Check if user can view this mechanic's location
-    if (req.user.role !== 'client' && req.user.role !== 'admin' && req.params.id !== req.user.id) {
-      return res.status(403).json({ message: "Forbidden" });
-    }
 
-    res.json({
-      mechanicId: mechanic._id,
-      latitude: mechanic.latitude,
-      longitude: mechanic.longitude,
-      lastLocationUpdate: mechanic.lastLocationUpdate
-    });
-  } catch (err) {
-    next(err);
-  }
-};
-
-// Update mechanic location
-exports.updateMechanicLocation = async (req, res, next) => {
-  try {
-    const { latitude, longitude } = req.body;
-
-    if (!latitude || !longitude) {
-      return res.status(400).json({ message: "Latitude and longitude are required" });
-    }
-
-    const mechanic = await User.findById(req.params.id);
-
-    if (!mechanic || mechanic.role !== 'mechanic') {
-      return res.status(404).json({ message: "Mechanic not found" });
-    }
-
-    if (mechanic._id.toString() !== req.user.id) {
-      return res.status(403).json({ message: "Can only update your own location" });
-    }
-
-    mechanic.latitude = parseFloat(latitude);
-    mechanic.longitude = parseFloat(longitude);
-    mechanic.lastLocationUpdate = new Date();
-
-    await mechanic.save();
-
-    res.json({
-      message: "Location updated successfully",
-      latitude: mechanic.latitude,
-      longitude: mechanic.longitude,
-      lastLocationUpdate: mechanic.lastLocationUpdate
-    });
-  } catch (err) {
-    next(err);
-  }
-};
-
-// Helper function to calculate distance between two points using Haversine formula
-function calculateDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371; // Earth's radius in kilometers
-  const dLat = toRadians(lat2 - lat1);
-  const dLng = toRadians(lng2 - lng1);
-
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
-    Math.sin(dLng / 2) * Math.sin(dLng / 2);
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = R * c;
-
-  return distance;
-}
-
-function toRadians(degrees) {
-  return degrees * (Math.PI / 180);
-}
 
 // Get user notifications
 exports.getNotifications = async (req, res, next) => {

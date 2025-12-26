@@ -17,6 +17,13 @@ router.patch(
   notificationController.markAsRead
 );
 
+router.get(
+  "/unread-count",
+  authenticate,
+  authorize(["client", "mechanic", "workshop", "admin"]),
+  notificationController.getUnreadCount
+);
+
 router.patch(
   "/mark-all-read",
   authenticate,

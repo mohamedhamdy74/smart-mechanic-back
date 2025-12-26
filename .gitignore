@@ -6,6 +6,9 @@ node_modules/
 .env.local
 .env.development
 .env.production
+.env.railway
+.env.*
+!.env.example
 
 # Logs
 logs

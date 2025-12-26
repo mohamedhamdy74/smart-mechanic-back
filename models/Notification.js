@@ -16,7 +16,8 @@ const notificationSchema = new mongoose.Schema(
         'booking_accepted',   // Booking accepted
         'booking_completed',  // Booking completed
         'booking_status_update', // Booking status changed
-        'new_message'         // New chat message
+        'new_message',         // New chat message
+        'maintenance_reminder' // Maintenance task reminder
       ],
       required: true,
     },
